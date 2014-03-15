@@ -14,6 +14,7 @@
 
 ## References:
 I could go over how a Ray Tracer works, but instead I'll point you to resources I learned this from:
+
 * [ACM Siggraph Ray Tracing](http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtrace0.htm)
 * [Paul Rademacher's "Ray Tracing: Graphics for the Masses"](http://www.cs.unc.edu/~rademach/xroads-RT/RTarticle.html)
 * [FuzzyPhoton "What is Ray Tracing?"](http://fuzzyphoton.tripod.com/whatisrt.htm)
