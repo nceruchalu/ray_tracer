@@ -8,19 +8,37 @@
 
 
 ## Technologies:
-- C
-- [CUDA 4.0](https://developer.nvidia.com/cuda-toolkit-40)
+* [CUDA 4.0](https://developer.nvidia.com/cuda-toolkit-40)
+* C
+    * Would have preferred to use C++ and recursion but CUDA 4.0 doesn't officially support those. 
+    * Had to make do with structs (for objects) and implement binary tree based stack (for recursion)
 
+## About Ray Tracing:
+Ray tracing is 3d graphics by tracing a path of light through pixels in a scene and simulating the effects of its encounters with virtual objects. It is based on the idead that you can model reflection and refraction by recursively following the path that these light rays take as they bounce through the 3d scene.
 
-## References:
-I could go over how a Ray Tracer works, but instead I'll point you to resources I learned this from:
+The problem with ray tracing is that it has a great computational cost so it is typically used in situations where the images can be rednered slowly ahead of time. 
+
+However with the power of a CUDA-enabled NVIDIA GPU I've been able to create a ray tracer that actually renders 3d graphic scenes in realtime. This makes it possible to translate, rotate and zoom in/out of the scene.
+
+Read the following for more background information on Ray Tracers:
 
 * [ACM Siggraph Ray Tracing](http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtrace0.htm)
 * [Paul Rademacher's "Ray Tracing: Graphics for the Masses"](http://www.cs.unc.edu/~rademach/xroads-RT/RTarticle.html)
 * [FuzzyPhoton "What is Ray Tracing?"](http://fuzzyphoton.tripod.com/whatisrt.htm)
 
 
+## Software Description
+| Module             | Description                                             |
+| ------------------ | ------------------------------------------------------- |
+| `Makefile`         | Creates executable `ray_tracer`
+| `ray_tracer.cu`    | Main Loop: initialize Pixel Buffer, Scene, mouse event handlers and start rendering |
+| `tracer_kernel.cu` | Implement Ray Tracing logic and binary tree stack (used for recursion) |
+| `scene.in`         | Sample input scene description file                     |
+
+
 ## Compiling
+This program includes a `Makefile` for use in compiling.
+
 To simplify compilation, the kernel file is simply included into the main file.
 As a result, `make` might not detect changes in the kernel, so you should use
 `make -B` (rebuild all).
@@ -49,7 +67,8 @@ Click the `esc` key to close the window.
 ## Scene Description
 A scene description input file is how the Ray Tracer knows what objects to draw and properties.
 
-The syntax of this file has the following rules:
+I came up with the syntax for this file and it's not very flexible so read the syntax rules that follow:
+
 * 1023 characters maximum per line.
 
 * Comments must be on separate lines that start with `#`. Yes I did this because I'm a python fan.
