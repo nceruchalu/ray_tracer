@@ -1,0 +1,162 @@
+# Sample scene description file for my simple raytracer.
+#
+# Revision History:
+#    11 Mar, 2012     Nnoduka Eruchalu     Initial Revision
+#
+# NOTE:
+# -max number of characters per line == 1023
+# -at the end of the file, throw in a '*' character and the program tells u
+#  when it read entire file successfully
+# -the first non-commented line in this file must be of property "type"
+# -a blank line should truly be blank! i.e. a line with anything other than
+#  a carriage return will be considered not-empty. This means a line with
+#  just one "space" will fail!
+#
+# OBJECTS
+# every object has material properties:
+#     ambient (amb), diffuse(diff) and specular(spec) colors,
+#     shininess(shiny), refraction index(n),
+#     reflective (kr) and trasnmissive(kt) coefficients
+#
+# object type specific properties are:
+# sphere:
+#    center, c
+#    radius, r
+#
+# box:
+#    minimum vertex, min
+#    maximum vertex, max
+#
+# plane:
+# plane equation is Ax + By + Cx + D = 0, represented by:
+#    pl   A B C D
+#
+# cylinder (capless):
+#    ymin
+#    ymax
+#    radius, r
+# 
+# cone (capless):
+#    ymin
+#    ymax
+#    base radius, r
+#
+#
+# LIGHTS
+# all lights have the properties:
+#  ambient (amb), diffuse(diff) and specular(spec) colors
+#  position in 3d-coordinates (pos)
+
+
+# greenish ball 
+type   SPHERE
+c      -1.0 -1.0 -1.0
+r      1.0
+amb    0.1 0.3 0.1 1.0
+diff   0.1 0.7 0.5 1.0
+spec   0.75 1.0 0.75 1.0
+shiny  20.0f
+n      1.5
+kr     0.25
+kt     0
+
+# reddish ball
+type   SPHERE
+c      -1.2 0.4 -1.0
+r      0.3
+amb    0.3 0.1 0.1 1.0
+diff   0.7 0.1 0.5 1.0
+spec   1.0 0.75 0.75 1.0
+shiny  20.0
+n      1.5
+kr     0.
+kt     0.
+
+# whitish-glass ball
+type   SPHERE
+c      0.5 0.0 0.0
+r      0.2
+amb    0.4 0.4 0.4 1.0
+diff   0.4 0.4 0.4 1.0
+spec   0.6 0.6 0.6 1.0    
+shiny  20.0
+n      0.9
+kr     0.25
+kt     0.75
+
+# bluish box  
+type   BOX
+min    0.4 -0.1 -2.3
+max    1.0  0.5 -1.7
+amb    0.1 0.1 0.3 1.0
+diff   0.1 0.5 0.7 1.0
+spec   0.75 0.75 1.0 1.0
+shiny  20.0
+n      1.5
+kr     0.5
+kt     0
+
+# glass box  
+type   BOX
+min    0.2 -1.2 0.4
+max    0.7 -0.7 1.0
+amb    0.0 0.0 0.0 1.0
+diff   0.0 0.0 0.0 1.0
+spec   0.0 0.0 0.0 1.0
+shiny  20.0
+n      1.0
+kr     0.5
+kt     0.5
+
+# bluish plane
+type   PLANE
+pl     0.0 1.0 0.0 3.0
+amb    0.1 0.1 0.3 1.0
+diff   0.1 0.5 0.7 1.0
+spec   0.75 0.75 1.0 1.0
+shiny  20.0
+n      1.5
+kr     0.5
+kt     0.5
+
+# reddish-glass cylinder
+type   CYLINDER
+ymin   0.4
+ymax   1.0
+r      0.3
+amb    0.3 0.1 0.1 1.0
+diff   0.7 0.1 0.5 1.0
+spec   1.0 0.75 0.75 1.0
+shiny  20.0
+n      1.5
+kr     0.5
+kt     0.5    
+
+# greenish-glass cone
+type   CONE
+ymin   1.4
+ymax   2.0
+r      0.3
+amb    0.1 0.3 0.1 1.0
+diff   0.1 0.7 0.5 1.0
+spec   0.75 1.0 0.75 1.0
+shiny  20.0f
+n      0.5
+kr     0.25
+kt     0.75
+
+# setup lighting -- yellowish lights seem natural
+type   LIGHT
+amb    0.2 0.2 0.1 1.0
+diff   1.0 1.0 0.5 1.0
+spec   1.0 1.0 0.5 1.0
+pos    1.5 1.0 1.0
+
+type   LIGHT
+amb    0.2 0.2 0.2 1.0
+diff   1.0 1.0 1.0 1.0
+spec   1.0 1.0 1.0 1.0
+pos    -1.4 1.4 -1.4
+
+# need this to signal end of file
+*
