@@ -1,14 +1,69 @@
 /*
- * Realtime Ray Tracer
- * 
+ * -----------------------------------------------------------------------------
+ * -----                        TRACER_KERNEL.CU                           -----
+ * -----                       REALTIME RAY TRACER                         -----
+ * -----------------------------------------------------------------------------
+ *
+ * File Description:
+ *  This is the kernel file of the Ray Tracer. It implements the Ray Tracing
+ *  logic and binary tree stack (needed for recursion).
+ *
+ * Table of Contents:
+ *  pushStack         - push a value unto the stack.
+ *  popStack          - pop a value from the stack
+ *  copyMats          - copy properties from one  Material object to another
+ *  copyRay           - copy properties from one Ray object to another
+ *  intersectSphere   - intersect a ray with a sphere
+ *  intersectPlane    - intersect a ray with a plane
+ *  pointInPlane      - check if a point is in a plane
+ *  intersectBox      - intersect a ray with a box
+ *  intersectCylinder - intersect a ray with a capless cylinder
+ *  intersectCone     - intersect a ray witha  capless cone
+ *  get_first_intersection - get first intersection of a ray in the scene
+ *  get_point_color   - get color at a point
+ *  initStack         - initialize stack 
+ *  updateNextLevel   - update the next level of the stack's binary tree
+ *  trace_ray         - trace a ray
+ *  (float3) mul      - transform vector by matrix (no translation)
+ *  (float4) mul      - transform vector by matrix with translation
+ *  rgbaFloatToInt    - convert rgba color to unsigned integer
+ *  rFloatToInt       - convert float to 32-bit unsigned int
+ *  d_render          - peform volume rendering
+ *
+ * Objects in module:
+ *  float3x4        - 3x4 float matrix representation 
+ *  Material        - scene object material properties
+ *  Object          - generic scene object
+ *  Intersect       - a Ray and Object's intersection point's properties
+ *  Light           - Light object
+ *  Ray             - Light Ray object
+ *  Stack4          - Ray tracer's binary tree (BinTree) stack
+ *
+ * Assumptions:
+ *  Using a machine with a CUDA-capable NVIDIA GPU
+ *
+ * Limitations:
+ *  - CUDA doesn't officially support C++. Don't want to fight a battle with
+ *    classes so I'll go ahead and define structs in place of objects (hopefully
+ *    efficiently).
+ *  - CUDA also doesn't support recursion. So have to use a binary tree based
+ *    stack to implement recursion here.
+ *    + A binary tree stack is neccessary as a ray tracer recursively follows
+ *      the path that light rays take as they intersect objects in the scene and
+ *      result in two new rays: a relected and a refracted ray.
+ *
  * References: (Had to learn this from somewhere)
  *  http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtrace0.htm
  *  http://www.cs.unc.edu/~rademach/xroads-RT/RTarticle.html
  *  http://fuzzyphoton.tripod.com/howtowrt.htm
  *  http://www.visualization.hpc.mil/wiki/Raytracing
  *
+ * Compiler:
+ *  NVIDIA's CUDA Compiler (NVCC)
+ *
  * Revision History:
- *    Mar 07 2012    Nnoduka Eruchalu    Initial Revision
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
  */
 
 #ifndef _TRACER_KERNEL_H_
@@ -16,30 +71,70 @@
 
 #include "cutil_math.h"
 
-typedef struct {
-    float4 m[3];
-} float3x4;
 
-#define EPSILON 0.00001f
-#define INTERSECT_EPSILON 0.01f
+/*
+ * Raytracers have to deal with the finite precision of computer calculations.
+ * Let us consider a situation in which a ray hits an object and is reflected.
+ * We have to find the nearest object intersected by the reflected ray. Now it
+ * is perfectly possible that this ray goes and hits another part of the same 
+ * object. Therefore this object must also be tested. Since this origin of the 
+ * reflected ray lies on the surface of the object, there will be an
+ * intersection point at zero (0) distance. If computers had infinite precision,
+ * we would indeed get 0 as one of the distances and we could safely ignore it. 
+ * But this is not the case. There will almost always be a small error in the
+ * distance. Thus the position of the point of reflection will be slightly
+ * different from the ideal value, and the distance that should be 0 will more
+ * liekly be some small quantity like 0.000001 (even if the point of reflection
+ * is ideally positioned). Yet we know that this result must be omitted. To
+ * handle this case, raytracers use a small value known as an "epsilon". All
+ * intersection distances less than the epsilon value are ignored. A good
+ * raytracer tries to make its epsilon setting as small as possible by reducing
+ * chances of numerical error, so that small details near the surface are not
+ * missed out
+ */
+#define EPSILON 0.00001f        // higher precision espilon value
+#define INTERSECT_EPSILON 0.01f // lower precision epsilon value
 
-#define MAX_RAY_TREE_DEPTH 3
+
+/* 
+ * A binary tree based stack is used to track the recursive path of the light
+ * rays that intersect the objects in the scene and consequenttly reflect and 
+ * refract.
+ * 
+ * Of course these rays can bounce along the scene infinitely. It's only
+ * practical to stop following these rays after a certain number of
+ * intersections. So we define a maximum ray tree depth (MAX_RAY_TREE_DEPTH)
+ *
+ * This binary tree stack will be represented as an array, just like we would
+ * represent any binary tree as an array. 
+ * - The binary size will have [2^(MAX_RAY_TREE_DEPTH+1) -1] nodes
+ * - There will be 1 empty node at index 0
+ * - Therefore total array size is: 2^(MAX_RAY_TREE_DEPTH+1)
+ */
+#define MAX_RAY_TREE_DEPTH 3   // max number of ray intersections to follow
 #define MAX_STACK_DEPTH 16     // 2^(MAX_RAY_TREE_DEPTH+1) -1 nodes in BinTree
-                                // (+1 empty node at index 0)
+                               // (+1 empty node at index 0)
 
-#define SPHERE   1  /* object types */
+
+/* 
+ * Supported scene object types 
+ */
+#define SPHERE   1  
 #define PLANE    2
 #define BOX      3
 #define CYLINDER 4
 #define CONE     5
 
-/* CUDA doesn't officially support C++, dont want to fight a battle with
- * classes, so just gonna go ahead and define structs (hopefully efficiently)
- *
- * CUDA also doesn't implement recursion. So have to use a binary tree based
- * stack to implement recursion here. There are two recursive calls in the
- * functions, hence a binary tree
- */
+
+
+///////////////////////////////////////////////////////////////////////////////
+// Structs that represent module objects
+///////////////////////////////////////////////////////////////////////////////
+
+typedef struct { // 3x4 matrix representation
+    float4 m[3];
+} float3x4;
+
 
 /* material properties come up a lot, so best to define a struct for them */
 typedef struct{    // material
@@ -134,29 +229,102 @@ __device__ Light d_light[NUM_LIGHTS];
 Light light[NUM_LIGHTS];
 
 
-// push unto the stack. Assuming that top already points to an empty slot
-// return 1 if successful, 0 otherwise
+
+///////////////////////////////////////////////////////////////////////////////
+// functions for Ray Tracing
+///////////////////////////////////////////////////////////////////////////////
+/*
+ * pushStack
+ * Description:
+ *  Push value unto the stack.
+ *
+ * Arguments: 
+ *  stack: BinTree stack
+ *  val:   Value to push onto stack.
+ *
+ * Return: 
+ *  - 1 if successful
+ *    0 if failure
+ *
+ * Operation:
+ *  - if stack is full, return failure
+ *  - else, add value to stack and increment top of stack.
+ *  
+ * Assumption:
+ *  The stack top pointer already points to an empty slot
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 int pushStack(Stack4 &stack, float4 val) 
 {
+    // if stack is full, return failure
     if(stack.top >= stack.size)
         return 0;
+    // stack not full, so add value, increment stack's top, and return success
     stack.body[stack.top++] = val;
     return 1;
 }
 
-// pop from stack. Have to decrement top to get to actual data
-// return 1 if successful, 0 otherwise
+
+/*
+ * popStack
+ * Description:
+ *  pop value from the stack.
+ *
+ * Arguments: 
+ *  stack: BinTree stack
+ *  val:   Value to push onto stack.
+ *
+ * Return: 
+ *  - 1 if successful
+ *    0 if failure
+ *
+ * Operation:
+ *  - if stack is empty, return failure
+ *  - else, decrement top of stack and get value.
+ *  
+ * Assumption:
+ *  The stack's top pointer needs to be decremented to get actual data.
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 int popStack(Stack4 &stack, float4 &val) 
 {
+    // if stack is empty, return failure
     if(stack.top <= 0)
         return 0;
+    // stack not empty, so decrement stack's top, get value, and return success
     val = stack.body[--stack.top];
     return 1;
 }
 
-// copy material properties
+
+/*
+ * copyMats
+ * Description:
+ *  copy properties from one Material object to another
+ *
+ * Arguments: 
+ *  m_dest:   Material object to copy properties to
+ *  m_source: Material object to copy properties from
+ *
+ * Return: 
+ *  None
+ *
+ * Operation:
+ *  assign all object properties in m_dest to the value of corresponding 
+ *  properties in m_source.
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 void copyMats(Material &m_dest, Material m_source)
 {
@@ -171,7 +339,28 @@ void copyMats(Material &m_dest, Material m_source)
     return;
 }
 
-// copy ray properties
+
+/*
+ * copyRay
+ * Description:
+ *  copy properties from one Ray object to another
+ *
+ * Arguments: 
+ *  dest:   Ray object to copy properties to
+ *  source: Ray object to copy properties from
+ *
+ * Return: 
+ *  None
+ *
+ * Operation:
+ *  assign all object properties in dest to the value of corresponding 
+ *  properties in source. Use copyMats() to copy the Ray's Intersection Material
+ *  property.
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 void copyRay(Ray &dest, Ray source)
 {
@@ -185,9 +374,35 @@ void copyRay(Ray &dest, Ray source)
     dest.pt.p = source.pt.p;
 }
 
-// intersect ray with sphere
-// http://www.cs.unc.edu/~rademach/xroads-RT/RTarticle.html
-// http://fuzzyphoton.tripod.com/howtowrt.htm
+
+/*
+ * intersectSphere
+ * Description:
+ *  intersect a ray with a sphere
+ *
+ * Arguments: 
+ *  r: Incident Ray object
+ *  s: Sphere object under consideration
+ *
+ * Return: 
+ *  1: an intersection
+ *  0: no intersection
+ *
+ * Operation:
+ *  - Check if ray actually intersects sphere
+ *  - If there is an intersection then there will actually be two intersections
+ *  - Take the closest intersection point that is further than the ray origin 
+ *    and in front of the eye-point (i.e. positive ray direction).
+ *  - set ray's intersection point properties
+ *
+ * References:
+ *  - http://www.cs.unc.edu/~rademach/xroads-RT/RTarticle.html
+ *  - http://fuzzyphoton.tripod.com/howtowrt.htm
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 int intersectSphere(Ray &r,          /* incident ray */
                     const Object &s  /* sphere under consideration */)
@@ -241,10 +456,34 @@ int intersectSphere(Ray &r,          /* incident ray */
 }
 
 
-// intersect ray with a plane
-// http://www.siggraph.org/education/materials/HyperGraph/raytrace/rayplane_intersection.htm
-// equation of a plane through 3 points at:
-// http://www.math.oregonstate.edu/home/programs/undergrad/CalculusQuestStudyGuides/vcalc/lineplane/lineplane.html
+/*
+ * intersectPlane
+ * Description:
+ *  intersect a ray with a plane
+ *
+ * Arguments: 
+ *  r: Incident Ray object
+ *  pln: Plane object under consideration
+ *
+ * Return: 
+ *  1: an intersection
+ *  0: no intersection
+ *
+ * Operation:
+ *  - Check if ray actually intersects plane (i.e. not parallel to plane)
+ *  - Take the closest intersection point that is in front of the eye-point 
+ *    (i.e. positive ray direction).
+ *  - set ray's intersection point properties
+ *
+ * References:
+ *  - http://www.siggraph.org/education/materials/HyperGraph/raytrace/rayplane_intersection.htm
+ *  - equation of a plane through 3 points at:
+ *    http://www.math.oregonstate.edu/home/programs/undergrad/CalculusQuestStudyGuides/vcalc/lineplane/lineplane.html
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 int intersectPlane(Ray &r,           /* incident ray */
                    const Object &pln /* plane under consideration */)
@@ -273,12 +512,29 @@ int intersectPlane(Ray &r,           /* incident ray */
 }
 
 
-// helper for intersectBox
-/* return 1 if a point is in a plane, 0 otherwise
- *    to check if a point (px,py,pz) is on a plane
- *    nx*(ppx-px) + ny*(ppy-py) + nz*(ppz-pz) == 0.0
- *      -- note that equality to 0.0 isnt happening so use an EPSILON check
- *      -- that is check if the absolute value is less than EPSILON
+/*
+ * pointInPlane
+ * Description:
+ *  Check if a point is in a plane. This is a helper function for intersectBox
+ *
+ * Arguments: 
+ *  n:  plane's normal vector
+ *  pp: point already established to be in a plane
+ *  p: point under consideration
+ *
+ * Return: 
+ *  1: point is in a plane
+ *  0: otherwise
+ *
+ * Operation:
+ *  to check if a point (px,py,pz) is on a plane, check the equation
+ *  nx*(ppx-px) + ny*(ppy-py) + nz*(ppz-pz) == 0.0
+ *  - note that equality to 0.0 isn't going to happen so use an EPSILON check,
+ *    i.e. check if the absolute value is less than EPSILON
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
  */
 __device__
 int pointInPlane(float3 n,  /* normal*/
@@ -297,8 +553,32 @@ int pointInPlane(float3 n,  /* normal*/
 }
 
 
-// intersect a ray with a Box
-// http://www.visualization.hpc.mil/wiki/Adding_in_a_Box_Object
+/*
+ * intersectBox
+ * Description:
+ *  Intersect a ray with a box
+ *
+ * Arguments: 
+ *  r: Incident Ray object
+ *  box: Box object under consideration
+ *
+ * Return: 
+ *  1: an intersection
+ *  0: no intersection
+ *
+ * Operation:
+ *  - Check if ray actually intersects box
+ *  - Take the closest intersection point that is in front of the eye-point 
+ *    (i.e. positive ray direction).
+ *  - set ray's intersection point properties
+ *
+ * References:
+ *  - http://www.visualization.hpc.mil/wiki/Adding_in_a_Box_Object
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 int intersectBox(Ray &r,           /* incident ray */
                    const Object &box /* box under consideration */)
@@ -356,9 +636,32 @@ int intersectBox(Ray &r,           /* incident ray */
 }
 
 
-
-// intersect ray with a cylinder (capless!)
-// http://www.visualization.hpc.mil/wiki/Adding_in_a_Cylinder_Object
+/*
+ * intersectCylinder
+ * Description:
+ *  Intersect a ray with a capless cylinder
+ *
+ * Arguments: 
+ *  r: Indicent Ray object
+ *  cyl: Cylinder under consideration
+ *
+ * Return: 
+ *  1: an intersection
+ *  0: no intersection
+ *
+ * Operation:
+ *  - Check if ray actually intersects cylinder
+ *  - Take the closest intersection point that is in front of the eye-point 
+ *    (i.e. positive ray direction).
+ *  - set ray's intersection point properties
+ *
+ * References:
+ *  - http://www.visualization.hpc.mil/wiki/Adding_in_a_Cylinder_Object
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 int intersectCylinder(Ray &r,           /* incident ray */
                       const Object &cyl /* cylinder under consideration */)
@@ -423,10 +726,34 @@ int intersectCylinder(Ray &r,           /* incident ray */
     
     return 1;                     // there was an intersection!  
 }
-    
-
-// intersect ray with a cone (capless!)
-// http://www.visualization.hpc.mil/wiki/Adding_in_a_Cone_Object
+  
+  
+/*
+ * intersectCone
+ * Description:
+ *  Intersect a ray with a capless cone
+ *
+ * Arguments: 
+ *  r: Indicent Ray object
+ *  con: Cone under consideration
+ *
+ * Return: 
+ *  1: an intersection
+ *  0: no intersection
+ *
+ * Operation:
+ *  - Check if ray actually intersects cone
+ *  - Take the closest intersection point that is in front of the eye-point 
+ *    (i.e. positive ray direction).
+ *  - set ray's intersection point properties
+ *
+ * References:
+ *  - http://www.visualization.hpc.mil/wiki/Adding_in_a_Cone_Object
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 int intersectCone(Ray &r,           /* incident ray */
                       const Object &con /* cone under consideration */)
@@ -502,8 +829,28 @@ int intersectCone(Ray &r,           /* incident ray */
 
 }
 
-    
-// get first intersection of a ray in the scene.
+
+/*
+ * get_first_intersection
+ * Description:
+ *  get first intersection of a ray in the scene.
+ *
+ * Arguments: 
+ *  r: Indicent Ray object
+ *
+ * Return: 
+ *  None
+ *
+ * Operation:
+ *  Loop through all objects in the scene, calling the appropriate 
+ *  intersect{Object} function for each object type. At the end of the loop
+ *  the Ray object is updated with the details of the nearest/first intersection
+ *  point.
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 void get_first_intersection(Ray &r)
 {
@@ -527,8 +874,35 @@ void get_first_intersection(Ray &r)
 }
 
 
-// get color at a point
-// if the point is in shadow, 
+/*
+ * get_point_color
+ * Description:
+ *  get color at a point, accounting for all light sources and shadows.
+ *
+ * Arguments: 
+ *  r: Indicent Ray object
+ *
+ * Return: 
+ *  rgba color
+ *
+ * Operation:
+ *  - Initialize the point color to an rgba of 0,0,0,0.
+ *  - There will be a shadow variable that determines if a point is in the
+ *    shadow of a light source. This variable will have a [0.0, 1.0] scale
+ *    with 0 meaning shadow and 1 meaning no shadow.
+ *  - Start by assuming the point is not in the shadows.
+ *  - If the ray didn't intersect an object, return the backgground color
+ *  - To add in the contributions from all light sources, loop through them all
+ *    and for each light source:
+ *    + check if a point is in the shadow of this light source. If so, get the
+ *      shadow factor
+ *    + scale the diffuse+specular colors by this shadow factor before
+ *      accumulating these colors into the point color.
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 float4 get_point_color(Ray &r)
 {
@@ -576,11 +950,32 @@ float4 get_point_color(Ray &r)
     return col4;        
 }
 
-// initialize_stack by setting up the root node and other properties of the
-// stack. Also setup all rays to a non-intersected state and set all colors
-// to blank. This way we can just loop through and add up colors easily.
-// Note that the root is initialized at index 1. This is just how
-// array based binary trees work. index 0 is purposely left blank.
+
+/*
+ * initStack
+ * Description:
+ *  Initialize BinTree stack.
+ *
+ * Arguments: 
+ *  stack: BinTree stack to be initialized
+ *  val:   rgba point color value to be put at root node
+ *  r:     Ray that this the point whose color is in root node.
+ *
+ * Return: 
+ *  None
+ *
+ * Operation:
+ *  - Initialize_stack by setting up the root node and other properties of the
+ *    stack. 
+ *  - Also setup all rays to a non-intersected state and set all colors
+ *    to blank. This way we can just loop through and add up colors easily.
+ *  -  Note that the root is initialized at index 1. This is just how array
+ *     implementations of binary trees work. Index 0 is purposely left blank.
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 void initStack(Stack4 &stack, float4 val, Ray &r)
 {
@@ -598,22 +993,40 @@ void initStack(Stack4 &stack, float4 val, Ray &r)
     copyRay(stack.r[1], r);
 }
 
-// This function to update the next level is very specific to the ray tracing
-// algorithm.
-// the root of the stack is already initialized.
-// Remember that level is setup to point to the currently filled one. So
-// when this function is called you plan on filling level+1
-// At each level the array indices will run from
-//      2^stack.level to [2^(stack.level+ 1) -1]
-//
-// When done updating the level pointer (INC it)
-// 
-// Algorithm: 
-// you get the stack with the level of the last filled level, using this, you
-// can update the next level, with this basic idea.
-// have a for loop of index i going from 2^level to 2^(level+1) - 1
-// at each entry here, if it's value is non-zero then we update its
-// reflection(left) and refraction(right) child nodes.
+
+/*
+ * updateNextLevel
+ * Description:
+ *  Update the next level of the stack's binary tree
+ *  This function to update the next level is very specific to the ray tracing
+ *  algorithm.
+ *  Remember that level is setup to point to the currently filled one. So
+ *  when this function is called you plan on filling level+1
+ *  At each level the array indices will run from [2^stack.level] to 
+ *  [2^(stack.level+ 1) -1]
+ *
+ * Arguments: 
+ *  stack: BinTree stack to be initialized
+ *
+ * Return: 
+ *  1: Success
+ *  0: Failure
+ *
+ * Operation:
+ *  You get the stack with the level set at that of the last filled level. Using
+ *  this, you can update the next level, with this basic idea:
+ *  - have a for loop of index i going from [2^level] to [2^(level+1) -1]
+ *  - at each entry here, if it's value is non-zero then we update its
+ *    reflection(left) and refraction(right) child nodes.
+*   - When done updating the level, increment the level pointer
+ *
+ * Assumptions:
+ *  The root of the stack is already initialized
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__ 
 int updateNextLevel(Stack4 &stack)
 {
@@ -701,8 +1114,33 @@ int updateNextLevel(Stack4 &stack)
 }
 
 
-// trace a ray
-// http://www.cs.unc.edu/~rademach/xroads-RT/RTarticle.html
+/*
+ * trace_ray
+ * Description:
+ *  Trace a Ray going through a point, accumulate and return final pixel color
+ *
+ * Arguments: 
+ *  r: Incident Ray Object
+ *
+ * Return: 
+ *  final color at a given point.
+ *
+ * Operation:
+ *  - As soon as a ray hits a surface, reflected and transmitted rays are
+ *    generated and these are traced through the scene. Each of these rays 
+ *    contribute to the color at a given pixel. 
+ *  - To keep a check on the level of recursion keep tracing the ray until you
+ *    hit max tree depth or until ray is done bouncing (whichever comes first)
+ *  - When done, pop off all saved colors and accumulate them. This is the final
+ *    pixel color.
+ *
+ * References:
+ *  http://www.cs.unc.edu/~rademach/xroads-RT/RTarticle.html
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 float4 trace_ray(Ray r)
 {
@@ -726,7 +1164,30 @@ float4 trace_ray(Ray r)
     return final_color;                 // then return final pixel color
 }
 
-// transform vector by matrix (no translation)
+
+/*
+ * (float3) mul
+ * Description:
+ *  Transform vector by matrix (no translation)
+ *
+ * Arguments: 
+ *  M: 3x4 matrix
+ *  v: vectorof dimension 3
+ *
+ * Return: 
+ *  vector of dimension 3
+ *
+ * Operation:
+ *  x = v.(row 1 of M)
+ *  y = v.(row 2 of M)
+ *  z = v.(row 3 of M)
+ *  return (x,y,z)
+ *
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 float3 mul(const float3x4 &M, const float3 &v)
 {
@@ -737,7 +1198,30 @@ float3 mul(const float3x4 &M, const float3 &v)
     return r;
 }
 
-// transform vector by matrix with translation
+
+/*
+ * (float3) mul
+ * Description:
+ *  Transform vector by matrix with translation
+ *
+ * Arguments: 
+ *  M: 3x4 matrix
+ *  v: vectorof dimension 4
+ *
+ * Return: 
+ *  vector of dimension 4
+ *
+ * Operation:
+ *  x = v.(row 1 of M)
+ *  y = v.(row 2 of M)
+ *  z = v.(row 3 of M)
+ *  return (x,y,z, 1.0f)
+ *
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__
 float4 mul(const float3x4 &M, const float4 &v)
 {
@@ -749,7 +1233,33 @@ float4 mul(const float3x4 &M, const float4 &v)
     return r;
 }
 
-// color conversion functions
+
+/*
+ * rgbaFloatToInt
+ * Description:
+ *  Convert rgba color to 32-bit unsigned integer
+ *
+ * Arguments: 
+ *  rgba: rgba color
+ *
+ * Return: 
+ *  unsigned integer with 8-bit component colors spread out over 32 bits as
+ *  follows:
+ *    0       7       15      23      32
+ *    +-------+-------+-------+-------+
+ *    |  red  | blue  | green | alpha |
+ *    +-------+-------+-------+-------+
+ *
+ * Operation:
+ *  - Clamp all component colors to the range [0.0, 1.0]
+ *  - Multiply component colors by 255 and truncate to unsigned 8-byte ints
+ *  - Shift components appropriately and OR in the values to get an accumulated
+ *    32-bit unsigned int.
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__ uint rgbaFloatToInt(float4 rgba)
 {
     rgba.x = __saturatef(rgba.x);   // clamp to [0.0, 1.0]
@@ -759,13 +1269,63 @@ __device__ uint rgbaFloatToInt(float4 rgba)
     return (uint(rgba.w*255)<<24) | (uint(rgba.z*255)<<16) | (uint(rgba.y*255)<<8) | uint(rgba.x*255);
 }
 
+
+/*
+ * rFloatToInt
+ * Description:
+ *  convert float to 32-bit unsigned integer
+ *
+ * Arguments: 
+ *  rgba: rgba color
+ *
+ * Return: 
+ *  unsigned integer with repeated 8-bit components spread out over 32 bits as
+ *  follows:
+ *    0       7       15      23      32
+ *    +-------+-------+-------+-------+
+ *    | float | float | float | float |
+ *    +-------+-------+-------+-------+
+ *
+ * Operation:
+ *  - Clamp float to the range [0.0, 1.0]
+ *  - Multiply float by 255 and truncate to unsigned 8-byte int
+ *  - Duplicate and shift int appropriately and OR in the values to get an 
+ *    accumulated 32-bit unsigned int.
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __device__ uint rFloatToInt(float r)
 {
     r = __saturatef(r);   // clamp to [0.0, 1.0]
     return (uint(r*255)<<24) | (uint(r*255)<<16) | (uint(r*255)<<8) | uint(r*255);
 }
 
-// perform volume rendering
+
+/*
+ * d_render
+ * Description:
+ *  Peform volume rendering
+ *
+ * Arguments: 
+ *  d_output: pointer to output pixel grid
+ *  imageW:   width of pixel grid
+ *  imageH:   height of pixel grid
+ *
+ * Return: 
+ *  None
+ *
+ * Operation:
+ *  For each pixel, identified by x,y coordinates:
+ *  - Calculate eye ray in world space, based off of inverse View Matrix.
+ *  - Raytrace eye ray (by calling trace_ray).
+ *  - Get the correspnding color and save it in output pixel grid.
+ *
+ * Revision History:
+ *  Mar. 07, 2012      Nnoduka Eruchalu     Initial Revision
+ *  Mar. 15, 2014      Nnoduka Eruchalu     Cleaned up comments
+ */
 __global__ void
 d_render(uint *d_output, uint imageW, uint imageH)
 {
