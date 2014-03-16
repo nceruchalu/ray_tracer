@@ -31,9 +31,10 @@ Read the following for more background information on Ray Tracers:
 | Module             | Description                                             |
 | ------------------ | ------------------------------------------------------- |
 | `Makefile`         | Creates executable `ray_tracer`
-| `ray_tracer.cu`    | Main Loop: initialize Pixel Buffer, Scene, mouse event handlers and start rendering |
-| `tracer_kernel.cu` | Implement Ray Tracing logic and binary tree stack (used for recursion) |
+| `ray_tracer.cu`    | Main Loop: Initialize Pixel Buffer, Scene, mouse event handlers and start rendering |
+| `tracer_kernel.cu` | Kernel File: Implement Ray Tracing logic and binary tree stack (used for recursion) |
 | `scene.in`         | Sample input scene description file                     |
+| `screenshots/`     | This folder contains the screenshot images              |
 
 
 ## Compiling
