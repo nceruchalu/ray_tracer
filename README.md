@@ -101,10 +101,9 @@ All lights have the following properties:
 
 | Key      | Description                |
 | -------- | -------------------------- |
-| `amb`    | ambient                    |
-| `diff`   | diffuse                    |
-| `spec`   | specular                   |
-| `colors` |                            |
+| `amb`    | ambient color              |
+| `diff`   | diffuse color              |
+| `spec`   | specular color             |
 | `pos`    | position in 3d-coordinates |
 
 
@@ -122,10 +121,9 @@ These objects all have the following properties:
 
 | Key      | Description              |
 | -------- | ------------------------ |
-| `amb`    | ambient                  |
-| `diff`   | diffuse                  |
-| `spec`   | specular                 |
-| `colors` |                          |
+| `amb`    | ambient color            |
+| `diff`   | diffuse color            |
+| `spec`   | specular color           |
 | `shiny`  | shininess                |
 | `n`      | refraction index         |
 | `kr`     | reflective coefficient   |
