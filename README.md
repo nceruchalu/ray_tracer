@@ -3,8 +3,7 @@
 |         |                                                              |
 | ------- | ------------------------------------------------------------ |
 | Author  | Nnoduka Eruchalu                                             |
-| Date    | 03/07/2012                                                   |
-| Course  | [Parallel Algorithms for Scientific Applications [ACM/CS 114]](http://www.cacr.caltech.edu/main/) |
+| Date    | 03/15/2014                                                   |
 
 
 ## Technologies:
